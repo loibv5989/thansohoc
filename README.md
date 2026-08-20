@@ -13,7 +13,7 @@ Plugin WordPress dùng để tra cứu và phân tích Thần Số Học dựa t
 * WordPress.
 * PHP 8.2 trở lên.
 * jQuery được WordPress cung cấp.
-* Các tính năng AI cần hệ thống AI/credit liên quan của website.
+* Các tính năng AI cần hệ thống AI/credit liên quan của website cần cài thêm plugin fortune-tools và vibhh-pay.
 
 ## Cài đặt
 1. Chép thư mục `thansohoc` vào:
