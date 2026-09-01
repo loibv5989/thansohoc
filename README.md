@@ -11,7 +11,7 @@ Plugin WordPress dùng để tra cứu và phân tích Thần Số Học dựa t
 
 ## Yêu cầu
 * WordPress.
-* PHP 8.2 trở lên.
+* PHP 8.2 trở lên + mbstring extension được bật
 * jQuery được WordPress cung cấp.
 * Các tính năng AI cần hệ thống AI/credit liên quan của website cần cài thêm plugin fortune-tools và vibhh-pay.
 

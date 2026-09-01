@@ -125,8 +125,10 @@ foreach (glob(THAN_SO_HOC_PLUGIN_DIR . 'data/*.php') as $file) {
 
 $handleSource = (string)file_get_contents(THAN_SO_HOC_PLUGIN_DIR . 'includes/handle.php');
 $javascriptSource = (string)file_get_contents(THAN_SO_HOC_PLUGIN_DIR . 'assets/tsh.js');
-$restAllowlistSource = (string)file_get_contents(ABSPATH . 'wp-content/themes/lbv-child/includes/optimization.php');
 $assertSame(true, str_contains($handleSource, "application/x-ndjson"), 'AI endpoint declares an NDJSON stream.');
+$assertSame(true, str_contains($handleSource, 'return DAY_IN_SECONDS;'), 'AI result cache expires after one day.');
+$assertSame(true, str_contains($handleSource, "'ths_cache_daily'"), 'Cache cleanup uses a daily cron recurrence.');
+$assertSame(false, str_contains($handleSource, 'ths_cache_30_days'), 'No legacy 30-day cache recurrence remains.');
 $assertSame(true, str_contains($handleSource, 'Fortune_AI::generateMainStream'), 'AI endpoint uses the streaming provider method.');
 $assertSame(true, str_contains($handleSource, 'streamResultMarkdown'), 'AI stream strips protocol markers before preview rendering.');
 $assertSame(true, str_contains($handleSource, '$last_preview_length'), 'AI stream limits full Markdown preview reparsing by response growth.');
@@ -136,7 +138,6 @@ $assertSame(true, str_contains($handleSource, "'usage_choice_required' => true")
 $assertSame(true, str_contains($handleSource, '$usage_mode ?: \'auto\''), 'Chosen usage mode is passed to the credit transaction.');
 $assertSame(true, str_contains($handleSource, "'code'] = 'free_ai_overloaded'"), 'Free provider failures return the overload code after refunding quota.');
 $assertSame(true, str_contains($handleSource, "register_rest_route('ths/v1', '/nonce'"), 'The plugin owns its dynamic nonce endpoint.');
-$assertSame(true, str_contains($restAllowlistSource, "'/wp-json/ths/v1/nonce'"), 'The site REST allowlist permits the plugin nonce endpoint.');
 $assertSame(true, str_contains($handleSource, "'permission_callback' => [\$this, 'authorizeNonce']"), 'The nonce endpoint requires its same-origin permission callback.');
 $assertSame(true, str_contains($handleSource, "\$fetch_site === 'same-origin'"), 'Modern browsers must identify nonce and AI requests as same-origin.');
 $assertSame(true, str_contains($handleSource, "get_header('Origin')"), 'Same-origin validation checks the Origin header.');

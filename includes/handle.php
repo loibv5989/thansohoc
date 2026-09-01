@@ -24,9 +24,12 @@ class ThanSoHoc {
             wp_clear_scheduled_hook('ths_daily_cache_reset');
         }
 
-        if (!wp_next_scheduled('ths_cache_reset')) {
-            wp_schedule_event(time() + self::cacheTtl(), 'ths_cache_30_days', 'ths_cache_reset');
+        $cache_event = wp_get_scheduled_event('ths_cache_reset');
+        if ($cache_event && $cache_event->schedule !== 'ths_cache_daily') {
+            wp_clear_scheduled_hook('ths_cache_reset');
+            $cache_event = false;
         }
+        if (!$cache_event) wp_schedule_event(time() + self::cacheTtl(), 'ths_cache_daily', 'ths_cache_reset');
     }
 
     public static function get_instance(): self {
@@ -149,15 +152,15 @@ class ThanSoHoc {
     }
 
     public function addCacheCronSchedule(array $schedules): array {
-        $schedules['ths_cache_30_days'] = [
+        $schedules['ths_cache_daily'] = [
             'interval' => self::cacheTtl(),
-            'display'  => 'Every 30 days',
+            'display'  => 'Once daily',
         ];
         return $schedules;
     }
 
     private static function cacheTtl(): int {
-        return 30 * DAY_IN_SECONDS;
+        return DAY_IN_SECONDS;
     }
 
     private static function beginStream(): bool {
