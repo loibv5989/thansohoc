@@ -210,11 +210,11 @@ class ThsName {
     private static function latin_word_parts(string $word): array {
         $parts = [];
         $letters = str_split($word);
-        foreach ($letters as $letter) {
+        foreach ($letters as $index => $letter) {
             $parts[] = [
                 'letter'   => $letter,
                 'value'    => self::LETTER_MAP[$letter] ?? 0,
-                'is_vowel' => self::is_latin_vowel($letter, $letters),
+                'is_vowel' => self::is_latin_vowel($letter, $letters, $index),
             ];
         }
 
@@ -336,14 +336,23 @@ class ThsName {
         return '';
     }
 
-    private static function is_latin_vowel(string $letter, array $word_letters): bool {
+    private static function is_latin_vowel(string $letter, array $word_letters, int $index): bool {
         if (in_array($letter, self::VOWELS, true)) return true;
         if ($letter !== 'Y') return false;
 
-        foreach ($word_letters as $word_letter) {
-            if (in_array($word_letter, self::VOWELS, true)) return false;
+        $lastIndex = count($word_letters) - 1;
+        $previous = $word_letters[$index - 1] ?? '';
+        $next = $word_letters[$index + 1] ?? '';
+        $hasOtherVowel = false;
+        foreach ($word_letters as $position => $wordLetter) {
+            if ($position !== $index && in_array($wordLetter, self::VOWELS, true)) $hasOtherVowel = true;
         }
 
-        return true;
+        if (!$hasOtherVowel) return true;
+        if ($index === 0) return $next === 'V';
+        if ($index === $lastIndex) return !in_array($previous, self::VOWELS, true);
+        if (!in_array($previous, self::VOWELS, true) && in_array($next, self::VOWELS, true)) return true;
+
+        return false;
     }
 }

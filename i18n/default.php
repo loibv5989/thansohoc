@@ -16,12 +16,14 @@ return [
             "Nhập họ tên và ngày sinh để xem bức tranh tổng quan về tính cách, mong muốn bên trong, cách bạn thể hiện ra ngoài, nhịp phát triển cá nhân và độ hòa hợp trong tình yêu.",
         "btn_explore" => "Khám phá",
         "btn_learn_more" => "Tìm hiểu thêm",
+        "method_label" => "Phương pháp",
+        "method_note" => "SolQi lập biểu đồ Thần số học theo hệ thống Thần số học phương Tây của Hans Decoz.",
         "essence_title" => "Bản chất của thần số học",
         "essence_desc" =>
             "Thần số học là cách nhìn biểu tượng về con người thông qua họ tên và ngày sinh. Kết quả không dùng để phán quyết số phận, mà giúp bạn có thêm một góc soi chiếu về bản thân, lựa chọn và các mối quan hệ.",
         "intro_card_1_title" => "Bản đồ cá nhân từ tên và ngày sinh",
         "intro_card_1_desc" =>
-            "Họ tên và ngày sinh dương lịch được quy đổi thành các chỉ số như Đường đời, Biểu đạt, Linh hồn, Nhân cách, Trưởng thành, Thái độ, Năm cá nhân và các chu kỳ phát triển. Mỗi chỉ số mở ra một góc nhìn khác nhau về xu hướng hành vi, nhu cầu bên trong và cách bạn tương tác với thế giới.",
+            "Họ tên và ngày sinh dương lịch được quy đổi thành các chỉ số như Đường đời, Biểu đạt, Linh hồn, Nhân cách, Trưởng thành, Năm cá nhân và các chu kỳ phát triển. Mỗi chỉ số mở ra một góc nhìn khác nhau về xu hướng hành vi, nhu cầu bên trong và cách bạn tương tác với thế giới.",
         "intro_card_2_title" => "Sự hòa hợp trong các mối quan hệ",
         "intro_card_2_desc" =>
             "Hệ thống tiến hành đối chiếu các chỉ số cốt lõi giữa hai người để nhận diện điểm đồng điệu, điểm dễ va chạm và cách hai nguồn năng lượng có thể bổ trợ cho nhau. Kết quả giúp bạn nhìn mối quan hệ bằng sự thấu hiểu thay vì phán xét.",
@@ -70,9 +72,6 @@ return [
         "lp_22_title" => "Master Number 22 mang năng lượng kiến tạo",
         "lp_22_desc" =>
             "Số 22 kết hợp tầm nhìn lớn với khả năng thực thi thực tế. Đây là năng lượng của người xây dựng, phù hợp với các kế hoạch dài hạn, dự án có cấu trúc và những giá trị có thể tạo ảnh hưởng bền vững. Sức ép từ trách nhiệm lớn dễ gây quá tải. Hãy học cách ủy quyền, hợp tác và chia nhỏ kế hoạch để thực thi vững chắc.",
-        "lp_33_title" => "Master Number 33 mang năng lượng chữa lành",
-        "lp_33_desc" =>
-            "Số 33 mang sắc thái của tình yêu thương, sự bao dung và năng lực nâng đỡ người khác bằng lòng trắc ẩn. Đây là năng lượng của người thầy, người chăm sóc hoặc người truyền cảm hứng thông qua sự thấu cảm sâu sắc. Cần tránh tự vắt kiệt vì muốn cứu giúp tất cả. Sự chữa lành bền vững bắt đầu từ việc biết bảo vệ ranh giới và chăm sóc chính mình.",
         "theory_title" => "Các chỉ số và chu kỳ quan trọng",
         "theory_1_title" => "Năm chỉ số cốt lõi",
         "theory_1_desc" =>
@@ -104,12 +103,12 @@ return [
         "faq_q3" => "Có cần nhập tên đầy đủ không?",
         "faq_a3" =>
             "Nên sử dụng họ tên đầy đủ theo khai sinh để việc quy đổi sang các chỉ số như Biểu đạt, Linh hồn, Nhân cách, Bài học nghiệp và Đam mê tiềm ẩn được nhất quán. Việc thiếu hoặc thay đổi tên có thể dẫn đến khác biệt trong kết quả phân tích.",
-        "faq_q4" => "Master Numbers 11, 22, 33 là gì?",
+        "faq_q4" => "Master Numbers 11 và 22 là gì?",
         "faq_a4" =>
-            "Đây là các số kép thường được giữ lại trong một số phép tính quan trọng. 11 thiên về trực giác và cảm hứng, 22 thiên về xây dựng và thực thi, còn 33 thiên về chăm sóc, phụng sự và nâng đỡ người khác.",
+            "Theo phương pháp Hans Decoz, 11 và 22 là hai số kép được giữ lại trong một số phép tính quan trọng. Số 11 thiên về trực giác và cảm hứng, còn số 22 thiên về xây dựng và thực thi.",
         "faq_q5" => "Tại sao kết quả khác với trang web khác?",
         "faq_a5" =>
-            "Các trang web khác nhau có thể áp dụng phương pháp hiện đại hoặc trường phái khác nhau. SolQi nghiên cứu Thần số học dựa theo Modern Western Numerology, kết hợp các chỉ số phổ biến như Đường đời, Biểu đạt, Linh hồn, Nhân cách, chu kỳ cá nhân, thử thách, bài học nghiệp và tương hợp tình yêu.",
+            "Các trang web có thể áp dụng những trường phái và quy tắc rút gọn khác nhau. SolQi sử dụng hệ Thần số học phương Tây của Hans Decoz, gồm các chỉ số như Đường đời, Biểu đạt, Linh hồn, Nhân cách, chu kỳ cá nhân, thử thách và bài học nghiệp.",
     ],
     "form" => [
         "hero_badge" => "Giải Mã Bản Thân",
@@ -260,6 +259,13 @@ return [
         "ai_disabled" => "Chức năng đang tạm ngưng.",
         "login_required" => "Vui lòng đăng nhập để sử dụng tính năng này.",
         "invalid_request" => "Yêu cầu không hợp lệ.",
+        "date_required" => "Vui lòng nhập ngày sinh.",
+        "date_range" => "Năm hỗ trợ từ 1900 đến 2100.",
+        "date_month" => "Tháng không hợp lệ. Dùng {format}.",
+        "date_day" => "Ngày không hợp lệ. Dùng {format}.",
+        "date_not_exists" => "Ngày {date} không tồn tại.",
+        "date_format" => "Định dạng: {format} (ví dụ: {example})",
+        "invalid_full_name" => "Vui lòng nhập họ tên hợp lệ.",
         "question_too_short" => "Vui lòng đặt câu hỏi rõ nghĩa hơn.",
         "question_too_long" => "Câu hỏi quá dài.",
         "invalid_name" =>
@@ -273,10 +279,16 @@ return [
         "name_too_long" => "Tên quá dài.",
         "credit_unavailable" => "Hệ thống lượt dùng chưa sẵn sàng.",
         "service_busy" => "Hệ thống đang bận, vui lòng thử lại sau.",
+        "free_ai_overloaded" => "Xin lỗi, SolQi đang quá tải. Bạn có thể thử lại hoặc dùng điểm trả phí để sử dụng ổn định hơn.",
         "error_occurred" => "Có lỗi xảy ra, vui lòng thử lại.",
+        "connection_error" => "Lỗi kết nối. Vui lòng kiểm tra mạng và thử lại.",
+        "request_timeout" => "Yêu cầu quá thời gian chờ. Vui lòng thử lại.",
+        "stream_unsupported" => "Trình duyệt này không hỗ trợ nhận kết quả trực tiếp.",
+        "response_unreadable" => "Không thể đọc kết quả trả về.",
+        "analysis_failed" => "Không thể luận giải. Vui lòng thử lại.",
+        "stream_incomplete" => "Kết nối kết thúc trước khi hoàn tất luận giải.",
         "out_of_credits" =>
             "Đã hết lượt miễn phí hôm nay, hãy mua thêm lượt hoặc quay lại vào ngày mai nhé.",
-        "ai_off" => "AI hiện đang tắt.",
     ],
     "admin" => [
         "page_title" => "Thần Số Học",

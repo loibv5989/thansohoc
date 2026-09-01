@@ -1,6 +1,15 @@
 jQuery(function ($) {
     const NAME_MAX_LENGTH = 80;
+    const ANALYZE_IDLE_TIMEOUT = 180000;
     let analysisLoadingTexts = null;
+    const clientMessages = ths.messages || {};
+    const message = (key, fallback, replacements = {}) => {
+        let text = clientMessages[key] || fallback;
+        Object.entries(replacements).forEach(([name, value]) => {
+            text = text.replaceAll(`{${name}}`, String(value));
+        });
+        return text;
+    };
 
     const DATE_INPUT_RULES = {
         default: {order: ['day', 'month', 'year'], separator: '/'},
@@ -58,18 +67,18 @@ jQuery(function ($) {
         messages() {
             const dateFormat = this.formatLabel();
             return {
-                required: 'Please enter your date of birth.',
-                range: 'Supported years are 1900 to 2100.',
-                month: `Invalid month. Use ${dateFormat}.`,
-                day: `Invalid day. Use ${dateFormat}.`,
-                notExists: (day, month, year) => `Date ${this.display(year, month, day)} does not exist.`
+                required: message('date_required', 'Please enter your date of birth.'),
+                range: message('date_range', 'Supported years are 1900 to 2100.'),
+                month: message('date_month', 'Invalid month. Use {format}.', {format: dateFormat}),
+                day: message('date_day', 'Invalid day. Use {format}.', {format: dateFormat}),
+                notExists: (day, month, year) => message('date_not_exists', 'Date {date} does not exist.', {date: this.display(year, month, day)})
             };
         },
         formatError() {
             const examples = {day: '15', month: '8', year: '1990'};
             const format = this.formatLabel();
             const example = this.order().map((part) => examples[part]).join(this.separator());
-            return `Format: ${format} (e.g. ${example})`;
+            return message('date_format', 'Format: {format} (e.g. {example})', {format, example});
         },
         display(year, month, day) {
             const values = {day, month, year};
@@ -167,7 +176,7 @@ jQuery(function ($) {
             const value = this.normalizeName(rawValue);
             $input.val(value);
             if (!value) {
-                $error.text('Please enter a valid full name.');
+                $error.text(message('invalid_full_name', 'Please enter a valid full name.'));
                 $input.addClass('is-error');
                 return false;
             }
@@ -366,6 +375,7 @@ jQuery(function ($) {
                 } catch (e) {}
             });
             $('#ths-landing-wrapper').removeClass('is-focused');
+            $('#ths-landing-wrapper .section-note').show();
             $('#ths-result').empty().hide();
             if ($('#ths-form').length) $('#ths-form')[0].reset();
             $('.ths-btn-reset').hide();
@@ -490,6 +500,7 @@ jQuery(function ($) {
                 ? snapshot.loadingTexts
                 : null;
             $('#ths-landing-wrapper').addClass('is-focused');
+            $('#ths-landing-wrapper .section-note').hide();
             $('#ths-form').length && $('#ths-form')[0].reset();
             if (snapshot.activeData) {
                 const dob = snapshot.activeData.dob || '';
@@ -561,6 +572,7 @@ jQuery(function ($) {
             $(document).on('click', '.ths-btn-reset', function () {
                 $(this).prop('disabled', true).fadeOut(200);
                 $('#ths-landing-wrapper').removeClass('is-focused');
+                $('#ths-landing-wrapper .section-note').show();
                 $('#ths-result').slideUp(300, function () {
                     $(this).empty();
                 });
@@ -620,7 +632,7 @@ jQuery(function ($) {
                     .then(response => response.json())
                     .then(res => {
                         if (!res.success) {
-                            $('#ths-error-name').text(res.message || 'An error occurred.');
+                            $('#ths-error-name').text(res.message || message('error_occurred', 'An error occurred. Please try again.'));
                             Loading.set(false);
                             if ($('#ths-landing-wrapper').hasClass('is-focused')) {
                                 $('.ths-btn-reset').prop('disabled', false).fadeIn(400);
@@ -632,6 +644,7 @@ jQuery(function ($) {
                             ? res.loading_texts
                             : null;
                         $('#ths-landing-wrapper').addClass('is-focused');
+                        $('#ths-landing-wrapper .section-note').hide();
 
                         UI.$resultBox.html(res.html).fadeIn(300, function () {
                             $('html,body').animate({scrollTop: UI.$resultBox.offset().top - 60}, 500);
@@ -646,7 +659,7 @@ jQuery(function ($) {
                         });
                     })
                     .catch(error => {
-                        $('#ths-error-name').text('Connection error. Please try again.');
+                        $('#ths-error-name').text(message('connection_error', 'Connection error. Please check your internet and try again.'));
                         Loading.set(false);
                         if ($('#ths-landing-wrapper').hasClass('is-focused')) {
                             $('.ths-btn-reset').prop('disabled', false).fadeIn(400);
@@ -673,6 +686,205 @@ jQuery(function ($) {
                     $btn.removeClass('ths-loading').removeAttr('disabled');
                     $btn.find('.ths-btn-text').show();
                     $loading.hide();
+                }
+            };
+
+            const readAiAnalyzeResponse = async (res, onActivity = () => {}) => {
+                const contentType = (res.headers.get('Content-Type') || '').toLowerCase();
+                if (!contentType.includes('application/x-ndjson')) return res.json();
+                if (!res.body) throw new Error(message('stream_unsupported', 'Streaming is not supported by this browser.'));
+
+                const reader = res.body.getReader();
+                const decoder = new TextDecoder();
+                const $stepWrap = $('#ths-step-2-wrap');
+                const $target = $('#ths-analysis-display').empty().addClass('ths-is-streaming');
+                $('#ths-disclaimer, #ths-action-footer').hide();
+                const target = $target[0];
+                const $preview = $('<div>', {'data-ths-stream-preview': '1'}).appendTo($target);
+                let buffer = '';
+                let previewHtml = '';
+                let previewDirty = false;
+                let finalResponse = null;
+                let updateTimer = null;
+                let didScroll = false;
+
+                const patchPreview = html => {
+                    const template = document.createElement('template');
+                    template.innerHTML = html;
+                    const currentNodes = Array.from($preview[0].childNodes);
+                    const incomingNodes = Array.from(template.content.childNodes);
+                    let stableCount = 0;
+                    while (stableCount < currentNodes.length && stableCount < incomingNodes.length && currentNodes[stableCount].isEqualNode(incomingNodes[stableCount])) stableCount++;
+                    currentNodes.slice(stableCount).forEach(node => node.remove());
+                    incomingNodes.slice(stableCount).forEach(node => $preview[0].appendChild(node));
+                };
+
+                const renderPending = () => {
+                    updateTimer = null;
+                    if (!previewDirty) return;
+                    patchPreview(previewHtml);
+                    previewDirty = false;
+                    $stepWrap.show();
+
+                    if (!didScroll) {
+                        didScroll = true;
+                        const rect = target.getBoundingClientRect();
+                        if (rect.top < 80 || rect.top > window.innerHeight - 100) {
+                            $('html, body').stop(true).animate({scrollTop: $target.offset().top - 100}, 300);
+                        }
+                    }
+                };
+
+                const scheduleRender = () => {
+                    if (updateTimer === null) updateTimer = setTimeout(renderPending, 50);
+                };
+
+                const consumeLine = line => {
+                    if (!line.trim()) return;
+                    let event;
+                    try {
+                        event = JSON.parse(line);
+                    } catch (e) {
+                        throw new Error(message('response_unreadable', 'The response could not be read.'));
+                    }
+
+                    if (event.type === 'preview') {
+                        previewHtml = event.html || '';
+                        previewDirty = true;
+                        scheduleRender();
+                    } else if (event.type === 'done') {
+                        finalResponse = event;
+                        previewHtml = event.html_detail || '';
+                        previewDirty = true;
+                        scheduleRender();
+                    } else if (event.type === 'error') {
+                        const error = new Error(event.message || message('analysis_failed', 'Unable to analyze. Please try again.'));
+                        error.userMessage = error.message;
+                        error.code = event.code || '';
+                        error.balance = event.balance || 0;
+                        throw error;
+                    }
+                };
+
+                try {
+                    while (true) {
+                        const {value, done} = await reader.read();
+                        if (value?.length) onActivity();
+                        buffer += decoder.decode(value || new Uint8Array(), {stream: !done});
+                        const lines = buffer.split('\n');
+                        buffer = lines.pop() || '';
+                        lines.forEach(consumeLine);
+                        if (done) break;
+                    }
+                    if (buffer.trim()) consumeLine(buffer);
+                    if (updateTimer !== null) clearTimeout(updateTimer);
+                    renderPending();
+                } catch (error) {
+                    if (updateTimer !== null) clearTimeout(updateTimer);
+                    $target.removeClass('ths-is-streaming');
+                    error.streamStarted = true;
+                    throw error;
+                }
+
+                if (!finalResponse) {
+                    $target.removeClass('ths-is-streaming');
+                    const error = new Error(message('stream_incomplete', 'The connection ended before the analysis was complete.'));
+                    error.streamStarted = true;
+                    throw error;
+                }
+                $preview.replaceWith($preview.contents());
+                finalResponse.is_streamed = true;
+                finalResponse.dom_finalized = true;
+                return finalResponse;
+            };
+
+            const fetchRestNonce = async signal => {
+                const res = await fetch(ths.api_url + 'nonce?_=' + Date.now(), {
+                    method: 'GET',
+                    credentials: 'same-origin',
+                    cache: 'no-store',
+                    headers: {'Cache-Control': 'no-cache', 'Pragma': 'no-cache'},
+                    signal
+                });
+                let data = null;
+                try {
+                    data = await res.json();
+                } catch (error) {
+                    const nonceError = new Error('nonce_response_unreadable');
+                    nonceError.userMessage = message('response_unreadable', 'The response could not be read.');
+                    throw nonceError;
+                }
+                if (!res.ok) {
+                    const nonceError = new Error(data?.code || 'nonce_request_failed');
+                    nonceError.userMessage = data?.message || message('error_occurred', 'An error occurred. Please try again.');
+                    throw nonceError;
+                }
+                return data.success && data.nonce ? data.nonce : '';
+            };
+
+            const requestUsagePreflight = async requestPayload => {
+                const abortController = new AbortController();
+                const timeoutId = setTimeout(() => abortController.abort(), ANALYZE_IDLE_TIMEOUT);
+                try {
+                    const nonce = await fetchRestNonce(abortController.signal);
+                    if (!nonce) return {success: false, code: 'login_required'};
+                    const res = await fetch(ths.api_url + 'analyze', {
+                        method: 'POST',
+                        credentials: 'same-origin',
+                        headers: {'Content-Type': 'application/json', 'X-WP-Nonce': nonce},
+                        body: JSON.stringify({...requestPayload, usage_preflight: true}),
+                        signal: abortController.signal
+                    });
+                    return await res.json();
+                } finally {
+                    clearTimeout(timeoutId);
+                }
+            };
+
+            const requestAiAnalysis = async requestPayload => {
+                const abortController = new AbortController();
+                let timeoutId = null;
+                const markActivity = () => {
+                    clearTimeout(timeoutId);
+                    timeoutId = setTimeout(() => abortController.abort(), ANALYZE_IDLE_TIMEOUT);
+                };
+                markActivity();
+                try {
+                    const nonce = await fetchRestNonce(abortController.signal);
+                    markActivity();
+                    if (!nonce) return {success: false, code: 'login_required'};
+                    const res = await fetch(ths.api_url + 'analyze', {
+                        method: 'POST',
+                        credentials: 'same-origin',
+                        headers: {'Content-Type': 'application/json', 'X-WP-Nonce': nonce, 'X-Ths-Stream': '1'},
+                        body: JSON.stringify(requestPayload),
+                        signal: abortController.signal
+                    });
+                    markActivity();
+                    return await readAiAnalyzeResponse(res, markActivity);
+                } finally {
+                    clearTimeout(timeoutId);
+                }
+            };
+
+            const requestAnalysisWithUsageChoice = async (requestPayload, onReady) => {
+                delete requestPayload.usage_mode;
+                const preflight = await requestUsagePreflight(requestPayload);
+                if (!preflight.usage_preflight && !preflight.usage_choice_required) return preflight;
+
+                let usageMode = preflight.usage_mode;
+                if (preflight.usage_choice_required) {
+                    if (!window.VibhhUsageModal?.choose) throw new Error('usage_options_unavailable');
+                    usageMode = await window.VibhhUsageModal.choose(preflight);
+                    if (!usageMode) return null;
+                }
+
+                requestPayload.usage_mode = usageMode;
+                onReady();
+                try {
+                    return await requestAiAnalysis(requestPayload);
+                } finally {
+                    delete requestPayload.usage_mode;
                 }
             };
 
@@ -705,13 +917,26 @@ jQuery(function ($) {
                 };
 
                 if (!data.name || !data.dob) {
-                    $err.text('Missing date of birth or full name.').show();
+                    $err.text(message('missing_info', 'Missing date of birth or full name.')).show();
                     return;
                 }
 
                 $err.hide().text('');
+                $activeBtn.attr('disabled', true);
                 $otherBtn.hide();
                 $cancelBtn.hide();
+
+                const showFreeOverload = balance => window.VibhhPayModal.showFreeOverload($err[0], balance, () => {
+                    PendingSession.save({
+                        force: true,
+                        source: 'than-so-hoc-payment',
+                        step: 'result',
+                        activeData: data,
+                        resultHtml: $('#ths-result').html(),
+                        question,
+                        payload: requestPayload
+                    });
+                });
 
                 const loadingMode = isQaMode ? 'qa' : 'deep';
                 const localizedLoadingTexts = analysisLoadingTexts?.[loadingMode];
@@ -719,41 +944,40 @@ jQuery(function ($) {
                     ? localizedLoadingTexts
                     : [];
                 let loadingStep = 0;
-                setAiButtonLoading($activeBtn, true, loadingTexts[loadingStep] || '');
-                const loadingInterval = loadingTexts.length > 1
-                    ? setInterval(() => {
+                let loadingInterval = null;
+                const startLoading = () => {
+                    setAiButtonLoading($activeBtn, true, loadingTexts[loadingStep] || '');
+                    if (loadingTexts.length > 1) loadingInterval = setInterval(() => {
                         if (loadingStep < loadingTexts.length - 1) {
                             loadingStep++;
                             $activeBtn.find('.ths-btn-loading').html(`<span class="ths-spinner"></span> ${loadingTexts[loadingStep]}`);
                         }
-                    }, 1500)
-                    : null;
+                    }, 1500);
+                };
 
-                const abortController = new AbortController();
-                const timeoutId = setTimeout(() => abortController.abort(), 240000);
                 const cleanup = () => {
                     clearInterval(loadingInterval);
-                    clearTimeout(timeoutId);
                 };
 
                 try {
-                    const res = await fetch(ths.api_url + 'analyze', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(requestPayload),
-                        signal: abortController.signal
-                    });
-
-                    const response = await res.json();
+                    const response = await requestAnalysisWithUsageChoice(requestPayload, startLoading);
                     cleanup();
+                    if (!response) {
+                        setAiButtonLoading($activeBtn, false);
+                        $otherBtn.show();
+                        if (isQaMode) $cancelBtn.show();
+                        return;
+                    }
 
                     if (response.success && response.html_detail) {
-                        $('#ths-analysis-display').html(response.html_detail);
+                        const $analysisDisplay = $('#ths-analysis-display');
+                        if (!response.dom_finalized) $analysisDisplay.html(response.html_detail);
                         $('#ths-step-2-wrap').slideDown(400, () => {
                             $('#ths-disclaimer').fadeIn(400);
                             $('#ths-action-footer').fadeIn(400);
                         });
-                        $('html, body').animate({ scrollTop: $('#ths-analysis-display').offset().top - 100 }, 300);
+                        if (response.is_streamed) requestAnimationFrame(() => $analysisDisplay.removeClass('ths-is-streaming'));
+                        else $('html, body').animate({scrollTop: $analysisDisplay.offset().top - 100}, 300);
                         PendingSession.clear();
                         setAiButtonLoading($activeBtn, false);
                         if (!isQaMode) {
@@ -782,18 +1006,28 @@ jQuery(function ($) {
                                 payload: requestPayload
                             });
                             window.VibhhPayModal.show(response.balance || 0);
+                        } else if (response.code === 'free_ai_overloaded' && window.VibhhPayModal?.showFreeOverload) {
+                            showFreeOverload(response.balance || 0);
                         } else {
-                            $err.text(response.message || 'Unable to analyze. Please try again.').show();
+                            $err.text(response.message || message('analysis_failed', 'Unable to analyze. Please try again.')).show();
                         }
                     }
                 } catch (err) {
                     cleanup();
+                    if (err.streamStarted) {
+                        $('#ths-analysis-display').empty().removeClass('ths-is-streaming');
+                        $('#ths-step-2-wrap').hide();
+                    }
                     setAiButtonLoading($activeBtn, false);
                     $otherBtn.show();
                     if (isQaMode) $cancelBtn.show();
-                    $err.text(err.name === 'AbortError'
-                        ? 'Request timed out. Please try again.'
-                        : 'Connection error. Please check your internet and try again.').show();
+                    if (err.code === 'free_ai_overloaded' && window.VibhhPayModal?.showFreeOverload) {
+                        showFreeOverload(err.balance || 0);
+                    } else {
+                        $err.text(err.userMessage || (err.name === 'AbortError'
+                            ? message('request_timeout', 'Request timed out. Please try again.')
+                            : message('connection_error', 'Connection error. Please check your internet and try again.'))).show();
+                    }
                 }
             };
 
@@ -819,7 +1053,7 @@ jQuery(function ($) {
 
                 const question = $('#ths-user-question').val().trim();
                 if (question.length < 10) {
-                    $err.text('Please ask a more meaningful question.').show();
+                    $err.text(message('question_too_short', 'Please ask a more meaningful question.')).show();
                     return;
                 }
 

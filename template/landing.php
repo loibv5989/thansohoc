@@ -23,6 +23,7 @@ if (!defined('ABSPATH')) exit;
             <?php require THAN_SO_HOC_PLUGIN_DIR . 'template/form.php'; ?>
         </div>
         <div class="ths-result" id="ths-result"></div>
+        <p class="section-note"><span><?php ThsI18n::e(ThsI18n::lookup('landing', 'method_label')) ?></span>: <?php ThsI18n::e(ThsI18n::lookup('landing', 'method_note')) ?></p>
     </section>
 
     <section class="lp-section ths-toggle-content">
@@ -73,7 +74,7 @@ if (!defined('ABSPATH')) exit;
             <p class="section-desc"><?= ThsI18n::t(ThsI18n::lookup('landing', 'meaning_desc')) ?></p>
 
             <div class="ths-meaning-nav">
-                <?php foreach([1,2,3,4,5,6,7,8,9,11,22,33] as $n): ?>
+                <?php foreach([1,2,3,4,5,6,7,8,9,11,22] as $n): ?>
                     <button class="ths-num-tab <?php echo $n === 1 ? 'active' : ''; ?>" onclick="thsSwitchNum(<?php echo $n; ?>, this)">
                         <?php echo $n; ?>
                     </button>
@@ -124,10 +125,6 @@ if (!defined('ABSPATH')) exit;
                 <div class="ths-num-content" id="ths-mean-22">
                     <h3><?php ThsI18n::e(ThsI18n::lookup('landing', 'lp_22_title')) ?></h3>
                     <p><?= ThsI18n::t(ThsI18n::lookup('landing', 'lp_22_desc')) ?></p>
-                </div>
-                <div class="ths-num-content" id="ths-mean-33">
-                    <h3><?php ThsI18n::e(ThsI18n::lookup('landing', 'lp_33_title')) ?></h3>
-                    <p><?= ThsI18n::t(ThsI18n::lookup('landing', 'lp_33_desc')) ?></p>
                 </div>
             </div>
         </div>

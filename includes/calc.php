@@ -8,7 +8,7 @@ class ThanSoHoc_Calc {
 
     private static string $current_locale = '';
 
-    private const MASTER = [11, 22, 33];
+    private const MASTER = [11, 22];
 
     private const KARMIC = [13, 14, 16, 19];
 
@@ -18,6 +18,43 @@ class ThanSoHoc_Calc {
         $profile = ThsName::profile($name, $locale);
         ThsName::validate_profile($profile);
         return $profile;
+    }
+
+    private static function nameGroups(string $normalizedName, string $locale): array {
+        $names = preg_split('/\s+/u', trim($normalizedName), -1, PREG_SPLIT_NO_EMPTY);
+        $groups = [];
+        foreach ($names as $name) {
+            $parts = ThsName::profile($name, $locale)['parts'] ?? [];
+            if ($parts !== []) $groups[] = $parts;
+        }
+        return $groups;
+    }
+
+    private static function nameNumber(array $groups, ?bool $vowelsOnly = null): array {
+        $groupParts = [];
+        $groupRaw = [];
+        $groupValues = [];
+
+        foreach ($groups as $parts) {
+            $selected = array_values(array_filter($parts, static function(array $part) use ($vowelsOnly): bool {
+                if ((int)($part['value'] ?? 0) <= 0) return false;
+                if ($vowelsOnly === null) return true;
+                return (bool)($part['is_vowel'] ?? false) === $vowelsOnly;
+            }));
+            $raw = array_sum(array_column($selected, 'value'));
+            $groupParts[] = $selected;
+            $groupRaw[] = $raw;
+            $groupValues[] = self::reduce($raw);
+        }
+
+        $raw = array_sum($groupValues);
+        return [
+            'parts' => $groupParts,
+            'group_raw' => $groupRaw,
+            'group_values' => $groupValues,
+            'raw' => $raw,
+            'value' => self::reduce($raw),
+        ];
     }
 
     private static function today(string $format): string {
@@ -110,20 +147,18 @@ class ThanSoHoc_Calc {
         $nameProfile = self::nameProfile($name, $locale);
         $clean = $nameProfile['normalized_name'];
 
+        $nameGroups = self::nameGroups($clean, $locale);
+        $expressionCalc = self::nameNumber($nameGroups);
+        $soulCalc = self::nameNumber($nameGroups, true);
+        $personalityCalc = self::nameNumber($nameGroups, false);
+
         $freq = array_fill(1, 9, 0);
-        $exp_raw = 0; $su_raw = 0; $per_raw = 0;
 
         foreach ($nameProfile['parts'] as $item) {
             $l = $item['letter'];
             $val = $item['value'];
             if ($val > 0) {
                 $freq[$val]++;
-                $exp_raw += $val;
-                if ($item['is_vowel']) {
-                    $su_raw += $val;
-                } else {
-                    $per_raw += $val;
-                }
             }
         }
 
@@ -142,24 +177,23 @@ class ThanSoHoc_Calc {
             $balance_sum += (int)($item['value'] ?? 0);
         }
 
-        $dateStr = $day . $month . $year;
-        $lp_raw = array_sum(str_split($dateStr));
+        $rDay = self::reduce($day);
+        $rMonth = self::reduce($month);
+        $rYear = self::reduce(array_sum(str_split((string)$year)));
+        $lp_raw = $rMonth + $rDay + $rYear;
 
         $life_path   = self::reduce($lp_raw);
-        $expression  = self::reduce($exp_raw);
-        $soul_urge   = self::reduce($su_raw);
-        $personality = self::reduce($per_raw);
+        $expression  = $expressionCalc['value'];
+        $soul_urge   = $soulCalc['value'];
+        $personality = $personalityCalc['value'];
         $maturity    = self::reduce($life_path + $expression);
 
         $currentYear = (int) self::today('Y');
-        $py_raw = array_sum(str_split($day . $month . $currentYear));
+        $py_raw = self::reduceToSingle($month) + self::reduceToSingle($day) + self::reduceToSingle(array_sum(str_split((string)$currentYear)));
         $personal_year  = self::reduceToSingle($py_raw);
         $personal_month = self::reduceToSingle($personal_year + (int)self::today('n'));
         $personal_day   = self::reduceToSingle($personal_month + (int)self::today('j'));
 
-        $rDay = self::reduce($day);
-        $rMonth = self::reduce($month);
-        $rYear = self::reduce(array_sum(str_split((string)$year)));
         $period_cycles = [$rMonth, $rDay, $rYear];
 
         $pinnacles = self::calculatePinnacles($rDay, $rMonth, $rYear, $life_path);
@@ -167,9 +201,9 @@ class ThanSoHoc_Calc {
 
         $k_day = self::checkKarmic($day);
         $k_lp  = self::checkKarmic($lp_raw);
-        $k_exp = self::checkKarmic($exp_raw);
-        $k_su  = self::checkKarmic($su_raw);
-        $k_per = self::checkKarmic($per_raw);
+        $k_exp = self::checkKarmic($expressionCalc['raw']);
+        $k_su  = self::checkKarmic($soulCalc['raw']);
+        $k_per = self::checkKarmic($personalityCalc['raw']);
 
         $k_debt_display = [];
         if ($k_day > 0) $k_debt_display[] = $k_day;
@@ -189,12 +223,12 @@ class ThanSoHoc_Calc {
         return [
             'life_path'        => $life_path,
             'expression'       => $expression,
-            'attitude'         => self::reduce($att_raw),
+            'attitude'         => self::reduceToSingle($att_raw),
             'birthday'         => $day,
             'soul_urge'        => $soul_urge,
             'personality'      => $personality,
             'maturity'         => $maturity,
-            'balance'          => self::reduce($balance_sum),
+            'balance'          => self::reduceToSingle($balance_sum),
             'karmic_lessons'   => $k_less_str,
             'karmic_debt'      => $k_debt_str,
             'karmic_lessons_arr'=> $karmic_lessons,
@@ -204,7 +238,7 @@ class ThanSoHoc_Calc {
             'personal_year'    => $personal_year,
             'personal_month'   => $personal_month,
             'personal_day'     => $personal_day,
-            'rational_thought' => self::reduce(((int)($nameProfile['first_parts'][0]['value'] ?? 0)) + $day),
+            'rational_thought' => self::reduce(self::reduce(array_sum(array_column($nameGroups[0] ?? [], 'value'))) + self::reduce($day)),
             'subconscious_self'=> $subconscious_self,
             'hidden_passion'   => $hidden_passion,
             'pinnacle_details' => $pinnacles,
@@ -226,10 +260,10 @@ class ThanSoHoc_Calc {
                 'life_path'  => in_array($life_path,  self::MASTER) ? (string)$life_path  : '',
                 'expression' => in_array($expression, self::MASTER) ? (string)$expression : '',
                 'soul_urge'  => in_array($soul_urge,  self::MASTER) ? (string)$soul_urge  : '',
-                'attitude'   => in_array(self::reduce($att_raw), self::MASTER) ? (string)self::reduce($att_raw) : '',
+                'attitude'   => '',
                 'personality'=> in_array($personality,self::MASTER) ? (string)$personality: '',
                 'maturity'   => in_array($maturity,   self::MASTER) ? (string)$maturity   : '',
-                'balance'    => in_array(self::reduce($balance_sum), self::MASTER) ? (string)self::reduce($balance_sum) : '',
+                'balance'    => '',
             ],
             'easter_eggs'     => self::calculateEasterEggs($name, $dob),
         ];
@@ -297,6 +331,35 @@ class ThanSoHoc_Calc {
             $lines[] = "* " . ThsI18n::lookup('calculation.ui', 'result') . ": {$current}/{$single}";
         }
         return $lines;
+    }
+
+    private static function getSingleReductionLines(int $raw): array {
+        $lines = [];
+        $current = $raw;
+        while ($current > 9) {
+            $digits = str_split((string)$current);
+            $sum = array_sum($digits);
+            $lines[] = "* {$current} → " . implode('+', $digits) . " = {$sum}";
+            $current = $sum;
+        }
+        return $lines;
+    }
+
+    private static function appendNameCalculation(array &$lines, string $label, array $calculation): void {
+        $lines[] = "* {$label}:";
+        foreach ($calculation['parts'] as $index => $parts) {
+            if ($parts === []) continue;
+            $raw = $calculation['group_raw'][$index];
+            $value = $calculation['group_values'][$index];
+            $suffix = $raw !== $value ? " = {$raw} → {$value}" : " = {$raw}";
+            $lines[] = '  * ' . self::formatNamePartsForCalculation($parts) . $suffix;
+        }
+
+        if (count($calculation['group_values']) > 1) {
+            $lines[] = '* ' . ThsI18n::lookup('calculation.ui', 'result') . ': '
+                . implode('+', $calculation['group_values']) . ' = ' . $calculation['raw'];
+        }
+        $lines = array_merge($lines, self::getReductionLines($calculation['raw']));
     }
 
     private static function formatVal(int $val): string {
@@ -417,7 +480,7 @@ class ThanSoHoc_Calc {
 
         $type   = $contextMap[$key]['type'];
 
-        $noMasterKeys = ['personal_year', 'personal_month', 'personal_day', 'challenges'];
+        $noMasterKeys = ['attitude', 'balance', 'personal_year', 'personal_month', 'personal_day', 'challenges'];
         $allowMaster  = !in_array($key, $noMasterKeys);
         $isShortUI    = ($key === 'pinnacles' || $key === 'challenges' || $key === 'period_cycles');
 
@@ -431,7 +494,7 @@ class ThanSoHoc_Calc {
                 return $num;
             }
 
-            while (!isset($dict['hint'][$num]) && $num > 9 && !in_array($num, [11, 22, 33, 13, 14, 16, 19, 15])) {
+            while (!isset($dict['hint'][$num]) && $num > 9 && !in_array($num, [11, 22, 13, 14, 16, 19, 15])) {
                 $num = array_sum(str_split((string)$num));
             }
             return $num;
@@ -628,32 +691,28 @@ class ThanSoHoc_Calc {
 
         $rDay = self::reduce($day);
         $rMonth = self::reduce($month);
+        $rYear = self::reduce(array_sum(str_split((string)$year)));
 
         $lp_disp  = self::formatVal($numbers['life_path']);
         $exp_disp = self::formatVal($numbers['expression']);
         $su_disp  = ((int)$numbers['soul_urge'] > 0) ? self::formatVal($numbers['soul_urge']) : ThsI18n::lookup('calculation.ui', 'none');
         $per_disp = ((int)$numbers['personality'] > 0) ? self::formatVal($numbers['personality']) : ThsI18n::lookup('calculation.ui', 'none');
 
-        $suParts = []; $suSum = 0; $expParts = []; $expSum = 0; $perParts = []; $perSum = 0;
-
-        foreach ($nameProfile['parts'] as $item) {
-            $l = $item['letter'];
-            $val = $item['value'];
-            if ($val === 0) continue;
-            $expParts[] = $item; $expSum += $val;
-            if ($item['is_vowel']) {
-                $suParts[] = $item; $suSum += $val;
-            } else {
-                $perParts[] = $item; $perSum += $val;
-            }
-        }
+        $nameGroups = self::nameGroups($clean, $locale);
+        $expressionCalc = self::nameNumber($nameGroups);
+        $soulCalc = self::nameNumber($nameGroups, true);
+        $personalityCalc = self::nameNumber($nameGroups, false);
 
         $lines = [ThsI18n::lookup('calculation.ui', 'norm_name') . " {$displayName}", ""];
 
-        $dobDigits = ThsHelper::date_digits_for_locale($day, $month, $year, $locale);
-        $lpRaw = array_sum($dobDigits);
+        $yearRaw = array_sum(str_split((string)$year));
+        $lpRaw = $rMonth + $rDay + $rYear;
         $lines[] = "**① " . ThsI18n::lookup('calculation.ui', 'item_11') . " {$lp_disp}**";
-        $lines[] = "* " . ThsI18n::lookup('calculation.ui', 'birth_date') . ": {$dobDisplay} → " . implode('+', $dobDigits) . " = {$lpRaw}";
+        $lines[] = "* " . ThsI18n::lookup('calculation.ui', 'birth_date') . ": {$dobDisplay}";
+        $lines[] = "* " . ThsI18n::lookup('calculation.ui', 'month') . ": {$month} → {$rMonth}; "
+            . ThsI18n::lookup('calculation.ui', 'day') . ": {$day} → {$rDay}; "
+            . ThsI18n::lookup('calculation.ui', 'year') . ": {$year} → {$yearRaw} → {$rYear}";
+        $lines[] = "* {$rMonth}+{$rDay}+{$rYear} = {$lpRaw}";
         $lines = array_merge($lines, self::getReductionLines($lpRaw));
         $lines[] = "";
 
@@ -661,25 +720,22 @@ class ThanSoHoc_Calc {
         [$attLabel, $attFormula] = self::dayMonthFormulaForLocale($day, $month, $locale);
         $lines[] = "**② " . ThsI18n::lookup('result.index', 'attitude') . " ({$numbers['attitude']})**";
         $lines[] = "* {$attLabel}: {$attFormula} = {$attTotal}";
-        $lines = array_merge($lines, self::getReductionLines($attTotal));
+        $lines = array_merge($lines, self::getSingleReductionLines($attTotal));
         $lines[] = "";
 
         $lines[] = "**③ " . ThsI18n::lookup('result.index', 'birthday') . " ({$numbers['birthday']})**";
         $lines[] = "* " . ThsI18n::lookup('calculation.ui', 'keep_birth') . ": {$day}\n";
 
         $lines[] = "**④ " . ThsI18n::lookup('calculation.ui', 'item_6') . " {$su_disp}**";
-        $lines[] = "* " . ThsI18n::lookup('calculation.ui', 'vowels') . ": " . (empty($suParts) ? '(' . ThsI18n::lookup('calculation.ui', 'none') . ')' : self::formatNamePartsForCalculation($suParts) . " = {$suSum}");
-        $lines = array_merge($lines, self::getReductionLines($suSum));
+        self::appendNameCalculation($lines, ThsI18n::lookup('calculation.ui', 'vowels'), $soulCalc);
         $lines[] = "";
 
         $lines[] = "**⑤ " . ThsI18n::lookup('result.index', 'expression') . " {$exp_disp}**";
-        $lines[] = "* " . ThsI18n::lookup('calculation.ui', 'letter_sum') . ": " . self::formatNamePartsForCalculation($expParts) . " = {$expSum}";
-        $lines = array_merge($lines, self::getReductionLines($expSum));
+        self::appendNameCalculation($lines, ThsI18n::lookup('calculation.ui', 'letter_sum'), $expressionCalc);
         $lines[] = "";
 
         $lines[] = "**⑥ " . ThsI18n::t('Số Nhân Cách') . " {$per_disp}** — " . ThsI18n::lookup('calculation.ui', 'cons_sum');
-        $lines[] = "* " . ThsI18n::lookup('calculation.ui', 'consonants') . ": " . (empty($perParts) ? '(' . ThsI18n::lookup('calculation.ui', 'none') . ')' : self::formatNamePartsForCalculation($perParts) . " = {$perSum}");
-        $lines = array_merge($lines, self::getReductionLines($perSum));
+        self::appendNameCalculation($lines, ThsI18n::lookup('calculation.ui', 'consonants'), $personalityCalc);
         $lines[] = "";
 
         $matRaw = $numbers['life_path'] + $numbers['expression'];
@@ -689,23 +745,19 @@ class ThanSoHoc_Calc {
         $lines[] = "";
 
         $py_disp = self::formatVal($numbers['personal_year']);
-        $personalYearDigits = ThsHelper::date_digits_for_locale($day, $month, $currentYear, $locale);
-        $pyRaw = array_sum($personalYearDigits);
+        $personalMonthBase = self::reduceToSingle($month);
+        $personalDayBase = self::reduceToSingle($day);
+        $personalYearDigitSum = array_sum(str_split((string)$currentYear));
+        $personalYearBase = self::reduceToSingle($personalYearDigitSum);
+        $pyRaw = $personalMonthBase + $personalDayBase + $personalYearBase;
         $lines[] = "**⑧ " . ThsI18n::lookup('result.index', 'personal_year') . " {$currentYear} ({$py_disp})**";
-        $lines[] = "* {$personalYearDateDisplay} → " . implode('+', $personalYearDigits) . " = {$pyRaw}";
-        $cur = $pyRaw;
-        while ($cur > 9) {
-            $digits = str_split((string)$cur);
-            $sum = array_sum($digits);
-            $lines[] = "* {$cur} → " . implode('+', $digits) . " = {$sum}";
-            $cur = $sum;
-        }
+        $lines[] = "* {$personalYearDateDisplay}: {$personalMonthBase}+{$personalDayBase}+{$personalYearBase} = {$pyRaw}";
+        $lines = array_merge($lines, self::getSingleReductionLines($pyRaw));
         $lines[] = "";
 
         $lines[] = "**⑨ " . ThsI18n::lookup('result.index', 'period_cycles') . " ({$numbers['period_cycles']})**";
         $lines[] = "* " . ThsI18n::lookup('calculation.ui', 'cycle_1') . ": {$month} → {$rMonth}";
         $lines[] = "* " . ThsI18n::lookup('calculation.ui', 'cycle_2') . ": {$day} → {$rDay}";
-        $yearRaw = array_sum(str_split((string)$year));
         $lines[] = "* " . ThsI18n::lookup('calculation.ui', 'cycle_3') . ": {$year} → " . implode('+', str_split((string)$year)) . " = {$yearRaw}";
         $lines = array_merge($lines, self::getReductionLines($yearRaw));
         $lines[] = "";
@@ -751,7 +803,7 @@ class ThanSoHoc_Calc {
             }
         }
         $lines[] = "* " . ThsI18n::lookup('calculation.ui', 'initials') . ": " . (empty($balParts) ? '(' . ThsI18n::lookup('calculation.ui', 'none') . ')' : implode(' + ', $balParts) . " = {$balSum}");
-        $lines = array_merge($lines, self::getReductionLines($balSum));
+        $lines = array_merge($lines, self::getSingleReductionLines($balSum));
         $lines[] = "";
 
         $lines[] = "**⑬ " . ThsI18n::lookup('calculation.ui', 'passion_section') . "**";

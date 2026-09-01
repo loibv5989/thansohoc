@@ -85,6 +85,20 @@ class ThanSoHoc {
         ];
     }
 
+    private static function clientMessages(): array {
+        $keys = [
+            'date_required', 'date_range', 'date_month', 'date_day', 'date_not_exists', 'date_format',
+            'invalid_full_name', 'error_occurred', 'connection_error', 'request_timeout',
+            'stream_unsupported', 'response_unreadable', 'analysis_failed', 'stream_incomplete',
+            'missing_info', 'question_too_short',
+        ];
+        $messages = [];
+        foreach ($keys as $key) {
+            $messages[$key] = ThsI18n::lookup('errors', $key, ThsI18n::lookup_default('errors', $key));
+        }
+        return $messages;
+    }
+
     private static function loadPrompt(): void {
         require_once THAN_SO_HOC_PLUGIN_DIR . 'includes/prompt.php';
     }
@@ -146,6 +160,37 @@ class ThanSoHoc {
         return 30 * DAY_IN_SECONDS;
     }
 
+    private static function beginStream(): bool {
+        while (ob_get_level() > 0) ob_end_clean();
+        ignore_user_abort(true);
+        header('Content-Type: application/x-ndjson; charset=UTF-8');
+        header('Cache-Control: no-cache, no-store, no-transform');
+        header('X-Accel-Buffering: no');
+        header('X-Content-Type-Options: nosniff');
+        return self::emitStreamEvent(['type' => 'ready']);
+    }
+
+    private static function emitStreamEvent(array $event): bool {
+        echo wp_json_encode($event, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . "\n";
+        flush();
+        return connection_aborted() === 0;
+    }
+
+    private static function endStream(): never {
+        exit;
+    }
+
+    private static function streamResultMarkdown(string $response): string {
+        $startTag = '[AST_RESULT]';
+        $start = strpos($response, $startTag);
+        if ($start === false) return '';
+
+        $result = substr($response, $start + strlen($startTag));
+        $end = strpos($result, '[/AST_RESULT]');
+        if ($end !== false) $result = substr($result, 0, $end);
+        return trim($result);
+    }
+
     public function resetCacheDirectory(): void {
         $upload_dir = wp_upload_dir();
         $cache_dir = $upload_dir['basedir'] . self::THS_CACHE;
@@ -200,9 +245,10 @@ class ThanSoHoc {
         if (empty($post->post_content)) return;
         if (!has_shortcode($post->post_content, 'than_so_hoc_landing')) return;
         wp_enqueue_style('tsh', THAN_SO_HOC_PLUGIN_URL . 'assets/tsh.css', [], THAN_SO_HOC_VERSION);
-        wp_enqueue_script('tsh', THAN_SO_HOC_PLUGIN_URL . 'assets/tsh.min.js', ['jquery'], THAN_SO_HOC_VERSION, true);
+        wp_enqueue_script('tsh', THAN_SO_HOC_PLUGIN_URL . 'assets/tsh.js', ['jquery'], THAN_SO_HOC_VERSION, true);
         wp_localize_script('tsh', 'ths', [
             'api_url' => esc_url_raw(rest_url('ths/v1/')),
+            'messages' => self::clientMessages(),
         ]);
     }
 
@@ -237,16 +283,68 @@ class ThanSoHoc {
             'args'                => $args
         ]);
 
+        register_rest_route('ths/v1', '/nonce', [
+            'methods'             => 'GET',
+            'callback'            => [$this, 'handleRestNonce'],
+            'permission_callback' => [$this, 'authorizeNonce'],
+        ]);
+
         register_rest_route('ths/v1', '/analyze', [
             'methods'             => 'POST',
             'callback'            => [$this, 'handleRestAnalyze'],
-            'permission_callback' => '__return_true',
+            'permission_callback' => [$this, 'authorizeAnalyze'],
             'args'                => array_merge($args, [
                 'user_question' => ['required' => false, 'sanitize_callback' => 'sanitize_textarea_field'],
                 'is_qa_mode'    => ['required' => false, 'sanitize_callback' => 'rest_sanitize_boolean'],
+                'usage_preflight' => ['required' => false, 'sanitize_callback' => 'rest_sanitize_boolean'],
+                'usage_mode'    => ['required' => false, 'sanitize_callback' => 'sanitize_text_field'],
                 'ths_hp_tname'  => ['required' => false, 'sanitize_callback' => 'sanitize_text_field'],
             ])
         ]);
+    }
+
+    public function handleRestNonce(): WP_REST_Response {
+        nocache_headers();
+        $user_id = self::getCurrentUserIdFromCookie();
+        if ($user_id <= 0) return new WP_REST_Response(['success' => false], 200);
+        wp_set_current_user($user_id);
+        return new WP_REST_Response(['success' => true, 'nonce' => wp_create_nonce('wp_rest')], 200);
+    }
+
+    public function authorizeNonce(WP_REST_Request $request): bool|WP_Error {
+        return self::isSameOriginRequest($request)
+            ? true
+            : new WP_Error('rest_forbidden', ThsI18n::lookup('errors', 'invalid_request'), ['status' => 403]);
+    }
+
+    public function authorizeAnalyze(WP_REST_Request $request): bool|WP_Error {
+        if (!self::isSameOriginRequest($request)) {
+            return new WP_Error('rest_forbidden', ThsI18n::lookup('errors', 'invalid_request'), ['status' => 403]);
+        }
+        $cookie_user_id = self::getCurrentUserIdFromCookie();
+        if ($cookie_user_id <= 0 || get_current_user_id() === $cookie_user_id) return true;
+        return new WP_Error('rest_forbidden', ThsI18n::lookup('errors', 'invalid_request'), ['status' => 403]);
+    }
+
+    private static function isSameOriginRequest(WP_REST_Request $request): bool {
+        $fetch_site = strtolower(trim((string)$request->get_header('Sec-Fetch-Site')));
+        if ($fetch_site !== '' && $fetch_site !== 'same-origin') return false;
+
+        $source_url = trim((string)$request->get_header('Origin'));
+        if ($source_url === '') $source_url = trim((string)$request->get_header('Referer'));
+        if ($source_url === '') return $fetch_site === 'same-origin';
+
+        $source = wp_parse_url($source_url);
+        $site = wp_parse_url(home_url('/'));
+        if (!is_array($source) || !is_array($site)) return false;
+
+        $source_scheme = strtolower((string)($source['scheme'] ?? ''));
+        $site_scheme = strtolower((string)($site['scheme'] ?? ''));
+        $source_host = strtolower((string)($source['host'] ?? ''));
+        $site_host = strtolower((string)($site['host'] ?? ''));
+        $source_port = (int)($source['port'] ?? ($source_scheme === 'https' ? 443 : 80));
+        $site_port = (int)($site['port'] ?? ($site_scheme === 'https' ? 443 : 80));
+        return $source_scheme === $site_scheme && $source_host === $site_host && $source_port === $site_port;
     }
 
     private static function validateNameInput(string $name): string {
@@ -340,6 +438,8 @@ class ThanSoHoc {
     }
 
     public function handleRestAnalyze(WP_REST_Request $request): WP_REST_Response {
+        $stream_requested = $request->get_header('X-Ths-Stream') === '1';
+        $stream_started = false;
         $locale = self::applyRequestLocale($request);
         if ($locale === '') {
             return new WP_REST_Response(['success' => false, 'message' => ThsI18n::lookup('errors', 'invalid_request')], 200);
@@ -373,6 +473,9 @@ class ThanSoHoc {
         $dob  = $request->get_param('dob');
         $user_question = sanitize_textarea_field($request->get_param('user_question') ?? '');
         $is_qa_mode = rest_sanitize_boolean($request->get_param('is_qa_mode'));
+        $is_usage_preflight = rest_sanitize_boolean($request->get_param('usage_preflight'));
+        $usage_mode = sanitize_text_field((string)$request->get_param('usage_mode'));
+        $usage_mode = in_array($usage_mode, ['free', 'paid'], true) ? $usage_mode : '';
 
         if (empty($name) || empty($dob)) {
             return new WP_REST_Response(['success' => false, 'message' => ThsI18n::lookup('errors', 'missing_info')], 200);
@@ -429,13 +532,33 @@ class ThanSoHoc {
             return $this->out_of_credits_response();
         }
 
+        if ($usage_mode === '' && ($quota_check['free_remaining'] ?? 0) > 0 && !empty($quota_check['paid_available'])) {
+            return new WP_REST_Response([
+                'success' => false,
+                'usage_choice_required' => true,
+                'free_remaining' => (int)$quota_check['free_remaining'],
+                'balance' => (int)($quota_check['balance_before'] ?? 0),
+            ], 200);
+        }
+
+        if ($is_usage_preflight) {
+            return new WP_REST_Response([
+                'success' => true,
+                'usage_preflight' => true,
+                'usage_mode' => ($quota_check['free_remaining'] ?? 0) > 0 ? 'free' : 'paid',
+            ], 200);
+        }
+
         if (!class_exists('Vibhh_Credit')) {
             return new WP_REST_Response(['success' => false, 'message' => ThsI18n::lookup('errors', 'credit_unavailable')], 200);
         }
 
-        $user_id = self::getCurrentUserIdFromCookie();
-        $quota_used = Vibhh_Credit::get_instance()->use_quota($user_id, 'than-so-hoc', THAN_SO_HOC_RATE_LIMIT);
+        $user_id = get_current_user_id();
+        $quota_used = Vibhh_Credit::get_instance()->use_quota($user_id, 'than-so-hoc', THAN_SO_HOC_RATE_LIMIT, $usage_mode ?: 'auto');
         if (($quota_used['status'] ?? '') === 'denied') {
+            if (!empty($quota_used['paid_available']) || ($quota_used['free_remaining'] ?? 0) > 0) {
+                return new WP_REST_Response(['success' => false, 'message' => ThsI18n::lookup('errors', 'error_occurred')], 200);
+            }
             return $this->out_of_credits_response();
         }
 
@@ -464,10 +587,7 @@ class ThanSoHoc {
                 $this->refund_quota($user_id, $quota_used);
                 $failed_quota = $this->failed_quota($quota_used);
                 $this->log_ths_request($user_id, $failed_quota, 'failed', $input, true, $user_question);
-                return new WP_REST_Response([
-                    'success' => false,
-                    'message' => ThsI18n::lookup('errors', 'service_busy'),
-                ], 200);
+                return new WP_REST_Response(self::overloadData($quota_used, ThsI18n::lookup('errors', 'service_busy')), 200);
             }
 
             $prompt = ThanSoHoc_Prompt::build_qa($numbers, $name, $dobIso, $user_question, $locale, $topicCodes);
@@ -477,8 +597,52 @@ class ThanSoHoc {
 
         $prompt = self::minifyJsonPrompt($prompt);
 
-        self::loadAI();
-        $ai_result = Fortune_AI::generateMain($prompt, $use_paid);
+        try {
+            self::loadAI();
+            if ($stream_requested) {
+                $stream_connected = self::beginStream();
+                $stream_started = true;
+                if (!$stream_connected) {
+                    $this->refund_quota($user_id, $quota_used);
+                    $this->log_ths_request($user_id, $this->failed_quota($quota_used), 'failed', $input, $is_qa_mode, $user_question);
+                    self::endStream();
+                }
+
+                $stream_response = '';
+                $last_preview_at = 0.0;
+                $last_preview_length = 0;
+                $ai_result = Fortune_AI::generateMainStream($prompt, $use_paid, static function(string $delta) use (&$stream_response, &$last_preview_at, &$last_preview_length): void {
+                    $stream_response .= $delta;
+                    $markdown = self::streamResultMarkdown($stream_response);
+                    if ($markdown === '') return;
+
+                    $now = microtime(true);
+                    $length = strlen($markdown);
+                    $minimum_growth = $last_preview_length === 0 ? 160 : max(512, (int)ceil($last_preview_length * 0.2));
+                    if ($length - $last_preview_length < $minimum_growth || $now - $last_preview_at < 0.25) return;
+                    $last_preview_at = $now;
+                    $last_preview_length = $length;
+                    if (!self::emitStreamEvent(['type' => 'preview', 'html' => self::markdownToHtml($markdown)])) {
+                        throw new RuntimeException('ths_stream_disconnected');
+                    }
+                });
+            } else {
+                $ai_result = Fortune_AI::generateMain($prompt, $use_paid);
+            }
+        } catch (Throwable $error) {
+            $this->refund_quota($user_id, $quota_used);
+            $this->log_ths_request($user_id, $this->failed_quota($quota_used), 'failed', $input, $is_qa_mode, $user_question);
+            if ($error instanceof RuntimeException && $error->getMessage() === 'ths_stream_disconnected') self::endStream();
+
+            $message = ThsI18n::lookup('errors', 'service_busy');
+            $error_data = self::overloadData($quota_used, $message);
+            if ($stream_started) {
+                self::emitStreamEvent(array_merge(['type' => 'error'], $error_data));
+                self::endStream();
+            }
+            return new WP_REST_Response($error_data, 200);
+        }
+
         $rawResponse = $ai_result['response'];
         $usage = $ai_result['usage'];
         $provider = $ai_result['provider'];
@@ -490,13 +654,22 @@ class ThanSoHoc {
             $message = str_starts_with($rawResponse, '[Error]')
                 ? trim(substr($rawResponse, strlen('[Error]')))
                 : ThsI18n::lookup('errors', 'service_busy');
-            return new WP_REST_Response(['success' => false, 'message' => $message], 200);
+            $error_data = self::overloadData($quota_used, $message);
+            if ($stream_started) {
+                self::emitStreamEvent(array_merge(['type' => 'error'], $error_data));
+                self::endStream();
+            }
+            return new WP_REST_Response($error_data, 200);
         }
 
         if (!str_contains($rawResponse, '[AST_RESULT]') || !str_contains($rawResponse, '[/AST_RESULT]')) {
             $this->refund_quota($user_id, $quota_used);
             $failed_quota = $this->failed_quota($quota_used);
             $this->log_ths_request($user_id, $failed_quota, 'failed', $input, $is_qa_mode, $user_question, $usage, $provider);
+            if ($stream_started) {
+                self::emitStreamEvent(['type' => 'error', 'message' => ThsI18n::lookup('errors', 'error_occurred')]);
+                self::endStream();
+            }
             return new WP_REST_Response(['success' => false, 'message' => ThsI18n::lookup('errors', 'error_occurred')], 200);
         }
 
@@ -506,7 +679,17 @@ class ThanSoHoc {
             $this->refund_quota($user_id, $quota_used);
             $failed_quota = $this->failed_quota($quota_used);
             $this->log_ths_request($user_id, $failed_quota, 'failed', $input, $is_qa_mode, $user_question, $usage, $provider);
+            if ($stream_started) {
+                self::emitStreamEvent(['type' => 'error', 'message' => ThsI18n::lookup('errors', 'error_occurred')]);
+                self::endStream();
+            }
             return new WP_REST_Response(['success' => false, 'message' => ThsI18n::lookup('errors', 'error_occurred')], 200);
+        }
+
+        if ($stream_started && connection_aborted()) {
+            $this->refund_quota($user_id, $quota_used);
+            $this->log_ths_request($user_id, $this->failed_quota($quota_used), 'failed', $input, $is_qa_mode, $user_question, $usage, $provider);
+            self::endStream();
         }
 
         $this->debug($prompt, $rawResponse);
@@ -518,6 +701,16 @@ class ThanSoHoc {
         }
 
         $this->log_ths_request($user_id, $quota_used, 'success', $input, $is_qa_mode, $user_question, $usage, $provider);
+
+        if ($stream_started) {
+            self::emitStreamEvent([
+                'type' => 'done',
+                'success' => true,
+                'html_detail' => $html,
+                'is_cached' => false,
+            ]);
+            self::endStream();
+        }
 
         return new WP_REST_Response([
             'success'     => true,
@@ -532,11 +725,11 @@ class ThanSoHoc {
     }
 
     public function validate_logged_in(): bool {
-        return self::getCurrentUserIdFromCookie() > 0;
+        return is_user_logged_in();
     }
 
     private function ths_quota(): array|bool {
-        $user_id = self::getCurrentUserIdFromCookie();
+        $user_id = get_current_user_id();
         if (!$user_id) return false;
 
         $quota = apply_filters('vibhh_check_quota', null, $user_id, 'than-so-hoc', THAN_SO_HOC_RATE_LIMIT);
@@ -544,7 +737,7 @@ class ThanSoHoc {
     }
 
     private function out_of_credits_response(): WP_REST_Response {
-        $user_id = self::getCurrentUserIdFromCookie();
+        $user_id = get_current_user_id();
         $balance = ($user_id && class_exists('Vibhh_Credit')) ? Vibhh_Credit::get_instance()->get_balance($user_id) : 0;
 
         return new WP_REST_Response([
@@ -571,6 +764,16 @@ class ThanSoHoc {
         }
 
         return $failed_quota;
+    }
+
+    private static function overloadData(array $quota_used, string $message): array {
+        $data = ['success' => false, 'message' => $message];
+        if (($quota_used['status'] ?? '') === 'free') {
+            $data['code'] = 'free_ai_overloaded';
+            $data['message'] = ThsI18n::lookup('errors', 'free_ai_overloaded', $message);
+            $data['balance'] = (int)($quota_used['balance_before'] ?? 0);
+        }
+        return $data;
     }
 
     private function log_ths_request(int $user_id, array $quota_used, string $status, array $input, bool $is_qa_mode, string $user_question, ?array $usage = null, string $provider = ''): void {
@@ -609,7 +812,8 @@ class ThanSoHoc {
         }
 
         $Parsedown = new Parsedown();
-        return $Parsedown->text($md);
+        $Parsedown->setSafeMode(true);
+        return wp_kses_post($Parsedown->text($md));
     }
 
     public function removePageTitle($title, $post_id) {

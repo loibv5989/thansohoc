@@ -3,7 +3,7 @@
  * Plugin Name: Thần Số Học
  * Plugin URI: https://solqi.net
  * Description: Tra cứu Thần Số Học - Vận Mệnh
- * Version: 26.7.26
+ * Version: 26.9.1
  * Author: Loibv
  * Requires PHP: 8.2 or higher
  * License: GPL v2 or later
@@ -12,7 +12,7 @@
 
 if (!defined('ABSPATH')) exit;
 
-define('THAN_SO_HOC_VERSION', '26.7.26');
+define('THAN_SO_HOC_VERSION', '26.9.1');
 define('THAN_SO_HOC_PLUGIN_DIR', plugin_dir_path(__FILE__));
 define('THAN_SO_HOC_PLUGIN_URL', plugin_dir_url(__FILE__));
 define('THAN_SO_HOC_RATE_LIMIT', 0);
