@@ -61,7 +61,7 @@ thansohoc/
 Loibv
 
 ## Demo
-[https://thansohoc.solqi.net/](https://thansohoc.solqi.net/)
+[https://solqi.net/](https://solqi.net/)
 
 ## License
 GPL v2 or later.
